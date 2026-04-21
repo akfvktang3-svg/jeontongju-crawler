@@ -1,0 +1,19 @@
+brand:
+  name: "전통주 인사이트"
+  primary_color: [101, 67, 33]       # 전통 나무빛 브라운
+  secondary_color: [255, 248, 220]   # 따뜻한 크림
+  accent_color: [184, 134, 11]       # 골든 호박
+  text_color: [30, 30, 30]           # 거의 검정
+  logo_path: ""                      # 로고 이미지 경로 (선택, 비워두면 텍스트 브랜드명 사용)
+
+fonts:
+  title: ""    # 비워두면 malgunbd.ttf(윈도우 한글 굵은 폰트) 자동 사용
+  body: ""     # 비워두면 malgun.ttf 자동 사용
+
+card:
+  width: 1080
+  height: 1080
+  padding: 80
+
+output:
+  directory: "./output/cards"
