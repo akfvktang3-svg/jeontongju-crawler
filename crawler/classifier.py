@@ -1,6 +1,10 @@
 """
-Claude 분류기
-수집된 뉴스를 Claude API로 자동 분류하고 카드뉴스 추천도를 평가합니다.
+Claude 기반 기사 카테고리 분류 (Phase 2: 글로벌 주류 확장)
+
+변경사항 (Phase 2):
+- 기존 전통주 카테고리 5개 유지
+- 글로벌 주류 카테고리 4개 추가 (총 9개)
+- 글로벌 기사는 별도 프롬프트로 분류
 """
 
 import os
@@ -9,145 +13,179 @@ import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
-
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 카테고리 정의
-CATEGORIES = {
-    "신제품 출시":   "🆕 새로운 전통주 출시, 리뉴얼, 신상품 등 시장에 새 제품이 등장한 소식",
-    "행사 소식":     "🎪 드링크서울, 주류박람회, 시음회, 바쇼 등 주류 관련 오프라인 행사",
-    "주류 트렌드":   "📈 국내 주류 소비량/판매량 변화, 수입/수출 동향, 맥주·위스키·와인 포함 주류 전반 트렌드",
-    "브랜드 이야기": "🏷️ 특정 양조장·브랜드의 헤리티지, 투어, 방문기, 브랜드 스토리 소개",
-    "기타":          "📌 위 네 가지에 해당하지 않는 기타 소식",
-}
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# 카테고리별 핵심 키워드 (Claude 오류시 보조 분류용)
-CATEGORY_KEYWORDS = {
-    "신제품 출시":   ["신제품", "출시", "신상품", "새로운", "리뉴얼", "선보", "한정판", "새 제품"],
-    "행사 소식":     ["행사", "시음회", "출품", "주류박람회", "바쇼", "드링크서울", "박람회", "개최", "참가", "페스티벌", "팝업"],
-    "주류 트렌드":   ["판매량", "매출", "소비량", "수입", "수출", "트렌드", "성장", "통계", "점유율", "MZ", "위스키", "와인"],
-    "브랜드 이야기": ["양조장", "브랜드", "증류소", "투어", "기행", "방문기", "헤리티지", "장인", "스토리"],
-}
+# 국내 전통주 카테고리 (기존 유지)
+KR_CATEGORIES = [
+    "신제품 출시",
+    "행사 소식",
+    "주류 트렌드",
+    "브랜드 이야기",
+    "기타",
+]
 
+# 글로벌 주류 카테고리 (Phase 2 신규)
+GLOBAL_CATEGORIES = [
+    "위스키",       # Whisky/Whiskey/Scotch/Bourbon
+    "와인",         # Wine/Vineyard
+    "스피릿",       # Gin/Rum/Vodka/Tequila etc.
+    "글로벌 트렌드", # RTD/Low ABV/Industry trends
+    "기타",
+]
 
-def classify_articles(articles: list[dict]) -> list[dict]:
-    """수집된 기사들을 Claude로 분류"""
-    print("\n🤖 Claude가 기사 분류 중...")
-
-    classified = []
-    batch_size = 5
-
-    for i in range(0, len(articles), batch_size):
-        batch = articles[i:i + batch_size]
-        batch_num = i // batch_size + 1
-        total_batches = (len(articles) + batch_size - 1) // batch_size
-        print(f"  📋 배치 {batch_num}/{total_batches} 처리 중...")
-        classified.extend(_classify_batch(batch))
-
-    print(f"\n  ✅ 분류 완료: {len(classified)}건")
-    return classified
+# 전체 카테고리 (구글 시트 탭 구성용)
+ALL_CATEGORIES = KR_CATEGORIES[:-1] + GLOBAL_CATEGORIES  # 중복 '기타' 제거
 
 
-def _classify_batch(batch: list[dict]) -> list[dict]:
-    """배치 단위로 Claude에게 분류 요청"""
+def _is_global_article(article: dict) -> bool:
+    """RSS 수집기에서 온 글로벌 기사 여부 확인"""
+    return article.get("collector") == "rss_global"
 
-    articles_text = ""
-    for idx, article in enumerate(batch):
-        articles_text += f"\n[{idx+1}]\n제목: {article['title']}\n요약: {article['summary']}\n출처: {article['source']}\n"
 
-    prompt = f"""당신은 전통주 및 주류 전문 미디어 편집자입니다.
-아래 기사들을 읽고 반드시 아래 5개 카테고리 중 하나로만 분류해주세요.
+def _classify_kr_batch(batch: list[dict]) -> list[dict]:
+    """국내 전통주 기사 분류 (기존 로직)"""
+    items_text = "\n".join(
+        f"[{i+1}] 제목: {a.get('title','')[:80]}"
+        for i, a in enumerate(batch)
+    )
 
-━━━ 카테고리 정의 ━━━
+    prompt = f"""당신은 전통주/우리술 전문 미디어 편집장입니다.
+아래 기사들을 다음 카테고리 중 하나로 분류해주세요.
 
-1. 신제품 출시
-   - 새로운 전통주·주류 제품이 시장에 나온 소식
-   - 기존 제품의 리뉴얼, 패키지 변경, 한정판 출시 포함
-   - 관련 단어: 신제품, 출시, 신상품, 새로운, 리뉴얼, 선보, 한정판
+카테고리:
+- 신제품 출시: 새로운 전통주 제품 출시 소식
+- 행사 소식: 축제, 박람회, 이벤트, 시음회 등
+- 주류 트렌드: 시장 동향, 소비 트렌드, 통계, 정책
+- 브랜드 이야기: 양조장 스토리, 명인, 인터뷰, 역사
+- 기타: 위에 해당하지 않는 전통주 관련 기사
 
-2. 행사 소식
-   - 대한민국에서 열리는 주류 관련 오프라인 행사
-   - 드링크서울, 주류박람회, 시음회, 바쇼, 페스티벌, 팝업 등
-   - 관련 단어: 행사, 시음회, 출품, 박람회, 바쇼, 드링크서울, 개최, 참가
+기사 목록:
+{items_text}
 
-3. 주류 트렌드
-   - 대한민국 주류 시장의 변화와 동향 (전통주 포함 맥주, 위스키, 와인 등 모두 포함)
-   - 소비량/판매량/매출 변화, 수입·수출 현황, MZ세대 주류 문화 등
-   - 관련 단어: 판매량, 매출, 소비량, 수입, 수출, 트렌드, 성장, 인기
-
-4. 브랜드 이야기
-   - 특정 양조장이나 브랜드 하나를 깊이 소개하는 기사
-   - 양조장 투어, 방문기, 브랜드 헤리티지, 창업자 이야기 등
-   - 관련 단어: 양조장, 증류소, 투어, 방문기, 기행, 헤리티지, 스토리, 장인
-
-5. 기타
-   - 위 4가지 카테고리 어디에도 해당하지 않는 소식
-
-━━━ 카드뉴스 추천도 기준 ━━━
-- 상: 일반 대중도 흥미롭게 읽을 만한 시의성 높은 소식
-- 중: 주류·전통주 관심층이 관심 가질 만한 소식
-- 하: 전문적이거나 대중 관심도가 낮은 소식
-
-━━━ 기사 목록 ━━━
-{articles_text}
-
-반드시 아래 JSON 배열 형식으로만 답하세요. 다른 텍스트는 절대 포함하지 마세요:
-[
-  {{
-    "index": 1,
-    "category": "신제품 출시/행사 소식/주류 트렌드/브랜드 이야기/기타 중 정확히 하나",
-    "reason": "분류 이유 한 줄 (20자 이내)",
-    "one_line": "핵심 내용 한 줄 요약 (30자 이내)",
-    "recommend": "상/중/하"
-  }}
-]"""
+반드시 아래 JSON 형식으로만 답하세요:
+[{{"index": 1, "category": "신제품 출시"}}, {{"index": 2, "category": "행사 소식"}}, ...]"""
 
     try:
         response = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=1000,
+            max_tokens=500,
             messages=[{"role": "user", "content": prompt}]
         )
-
         raw = response.content[0].text.strip()
         if "```" in raw:
             raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        results = json.loads(raw)
 
-        classifications = json.loads(raw)
-
-        result = []
-        for item in classifications:
-            idx = item["index"] - 1
-            if idx < len(batch):
-                article = batch[idx].copy()
-                category = item.get("category", "기타")
-                if category not in CATEGORIES:
-                    category = "기타"
-                article["category"]  = category
-                article["reason"]    = item.get("reason", "")
-                article["one_line"]  = item.get("one_line", article["title"][:30])
-                article["recommend"] = item.get("recommend", "하")
-                result.append(article)
-        return result
-
+        for r in results:
+            idx = r["index"] - 1
+            if 0 <= idx < len(batch):
+                batch[idx]["category"] = r.get("category", "기타")
+        return batch
     except Exception as e:
-        print(f"  ⚠️  분류 오류: {e}")
-        return _fallback_classify(batch)
+        print(f"  ⚠️ 국내 분류 오류: {e}")
+        for a in batch:
+            a.setdefault("category", "기타")
+        return batch
 
 
-def _fallback_classify(batch: list[dict]) -> list[dict]:
-    """Claude 오류 시 키워드 기반 기본 분류"""
-    for article in batch:
-        text = article.get("title", "") + " " + article.get("summary", "")
-        category = "기타"
-        for cat, keywords in CATEGORY_KEYWORDS.items():
-            if any(kw in text for kw in keywords):
-                category = cat
-                break
-        article["category"]  = category
-        article["reason"]    = "키워드 자동 분류"
-        article["one_line"]  = article.get("title", "")[:30]
-        article["recommend"] = "중"
-    return batch
+def _classify_global_batch(batch: list[dict]) -> list[dict]:
+    """글로벌 주류 기사 분류 (Phase 2 신규)"""
+    items_text = "\n".join(
+        f"[{i+1}] Title: {a.get('title','')[:80]}"
+        for i, a in enumerate(batch)
+    )
+
+    prompt = f"""You are an expert editor for a global spirits and wine industry publication.
+Classify each article into one of the following categories:
+
+Categories:
+- 위스키: Whisky, whiskey, scotch, bourbon, single malt, blended
+- 와인: Wine, vineyard, winery, vintage, champagne
+- 스피릿: Gin, rum, vodka, tequila, cognac, brandy, mezcal
+- 글로벌 트렌드: RTD cocktails, low ABV, hard seltzer, industry trends, regulations, market data
+- 기타: Other liquor industry news not fitting above
+
+Articles:
+{items_text}
+
+Reply ONLY in this JSON format:
+[{{"index": 1, "category": "위스키"}}, {{"index": 2, "category": "와인"}}, ...]"""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = response.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        results = json.loads(raw)
+
+        for r in results:
+            idx = r["index"] - 1
+            if 0 <= idx < len(batch):
+                batch[idx]["category"] = r.get("category", "기타")
+                batch[idx]["is_global"] = True  # 글로벌 기사 표시
+        return batch
+    except Exception as e:
+        print(f"  ⚠️ 글로벌 분류 오류: {e}")
+        for a in batch:
+            a.setdefault("category", "글로벌 트렌드")
+            a["is_global"] = True
+        return batch
+
+
+def classify_articles(articles: list[dict]) -> list[dict]:
+    """
+    전체 기사 분류 실행
+    - 국내 기사: 전통주 5개 카테고리
+    - 글로벌 기사: 주류 5개 카테고리
+    """
+    if not articles:
+        return []
+
+    print(f"\n🏷️  기사 분류 중... ({len(articles)}건)")
+
+    # 국내/글로벌 분리
+    kr_articles = [(i, a) for i, a in enumerate(articles) if not _is_global_article(a)]
+    global_articles = [(i, a) for i, a in enumerate(articles) if _is_global_article(a)]
+
+    result = list(articles)  # 원본 순서 유지용 복사
+
+    # 국내 기사 분류
+    if kr_articles:
+        print(f"  📰 국내 기사 분류 중... ({len(kr_articles)}건)")
+        batch_size = 10
+        for i in range(0, len(kr_articles), batch_size):
+            chunk = [a for _, a in kr_articles[i:i + batch_size]]
+            classified = _classify_kr_batch(chunk)
+            for j, (orig_idx, _) in enumerate(kr_articles[i:i + batch_size]):
+                result[orig_idx] = classified[j]
+
+    # 글로벌 기사 분류
+    if global_articles:
+        print(f"  🌍 글로벌 기사 분류 중... ({len(global_articles)}건)")
+        batch_size = 10
+        for i in range(0, len(global_articles), batch_size):
+            chunk = [a for _, a in global_articles[i:i + batch_size]]
+            classified = _classify_global_batch(chunk)
+            for j, (orig_idx, _) in enumerate(global_articles[i:i + batch_size]):
+                result[orig_idx] = classified[j]
+
+    # 분류 결과 요약
+    from collections import Counter
+    counts = Counter(a.get("category", "기타") for a in result)
+    print("  📊 분류 결과:")
+    for cat, cnt in counts.most_common():
+        print(f"    {cat}: {cnt}건")
+
+    return result
