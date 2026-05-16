@@ -54,6 +54,19 @@ RSS_FEEDS = [
 
 MAX_ARTICLES_PER_FEED = 10
 
+# 실제 브라우저처럼 위장하는 헤더
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache",
+}
+
 
 def _parse_date(entry):
     try:
@@ -75,7 +88,7 @@ def _clean_text(text):
 
 def fetch_rss_feed(feed_info):
     if feedparser is None:
-        print("  ⚠️ feedparser 미설치: pip install feedparser")
+        print("  WARNING: feedparser 미설치: pip install feedparser")
         return []
 
     source = feed_info["source"]
@@ -83,12 +96,13 @@ def fetch_rss_feed(feed_info):
     articles = []
 
     try:
-        feed = feedparser.parse(url, request_headers={
-            "User-Agent": "Mozilla/5.0 (compatible; GlobalLiquorBot/1.0)"
-        })
+        # 브라우저처럼 위장한 헤더로 요청
+        feed = feedparser.parse(url, request_headers=BROWSER_HEADERS)
 
         if feed.bozo and not feed.entries:
-            print(f"  ⚠️ [{source}] RSS 파싱 실패")
+            # bozo_exception 내용도 출력해서 디버깅 도움
+            exc = getattr(feed, "bozo_exception", "알 수 없는 오류")
+            print(f"  WARNING: [{source}] RSS 파싱 실패: {exc}")
             return []
 
         for entry in feed.entries[:MAX_ARTICLES_PER_FEED]:
@@ -103,6 +117,7 @@ def fetch_rss_feed(feed_info):
                 "title": title,
                 "link": link,
                 "description": summary,
+                "summary": summary,
                 "pub_date": _parse_date(entry),
                 "source": source,
                 "category": feed_info["category"],
@@ -111,19 +126,19 @@ def fetch_rss_feed(feed_info):
             }
             articles.append(article)
 
-        print(f"  ✅ [{source}] {len(articles)}건 수집")
+        print(f"  OK: [{source}] {len(articles)}건 수집")
 
     except Exception as e:
-        print(f"  ❌ [{source}] 수집 오류: {type(e).__name__}: {e}")
+        print(f"  ERROR: [{source}] 수집 오류: {type(e).__name__}: {e}")
 
     return articles
 
 
 def run():
-    print("\n🌍 글로벌 RSS 수집 시작...")
+    print("\n글로벌 RSS 수집 시작...")
 
     if feedparser is None:
-        print("  ⚠️ feedparser 미설치. 설치 명령: pip install feedparser")
+        print("  WARNING: feedparser 미설치. 설치 명령: pip install feedparser")
         return []
 
     all_articles = []
@@ -131,24 +146,24 @@ def run():
     for feed_info in RSS_FEEDS:
         articles = fetch_rss_feed(feed_info)
         all_articles.extend(articles)
-        time.sleep(0.5)
+        time.sleep(1)  # 요청 간격 늘림 (차단 방지)
 
     from collections import Counter
     counts = Counter(a["category"] for a in all_articles)
     for cat, cnt in counts.items():
-        print(f"  📂 {cat}: {cnt}건")
+        print(f"  카테고리 {cat}: {cnt}건")
 
-    print(f"📡 RSS 총 수집: {len(all_articles)}건")
+    print(f"RSS 총 수집: {len(all_articles)}건")
     return all_articles
 
 
 if __name__ == "__main__":
     results = run()
     if results:
-        print(f"\n=== 수집 결과 샘플 (상위 3건) ===")
+        print(f"\n수집 결과 샘플 (상위 3건):")
         for article in results[:3]:
             print(f"\n[{article['source']}] [{article['category']}]")
             print(f"제목: {article['title']}")
             print(f"링크: {article['link']}")
     else:
-        print("\n⚠️ 수집된 기사 없음")
+        print("\nWARNING: 수집된 기사 없음")
