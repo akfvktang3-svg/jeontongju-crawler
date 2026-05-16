@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-THRESHOLD_SCORE = 60
+THRESHOLD_SCORE = 30
 PRIORITY_SCORE = 80
 
 
