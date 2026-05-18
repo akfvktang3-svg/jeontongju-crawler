@@ -17,12 +17,11 @@ if "--test-telegram" in sys.argv:
 # -- 일반 실행 시에만 나머지 모듈 import --
 from crawler import naver_crawler
 from crawler import google_crawler
-from crawler import shopping_crawler
 from crawler import classifier
 from crawler import sheets_writer
 from crawler import rss_collector
 from crawler.deduplicator import remove_duplicates, print_dedup_report
-from crawler.filter import filter_news, filter_shopping
+from crawler.filter import filter_news
 from crawler.evaluator import evaluate_articles, get_top_articles, THRESHOLD_SCORE
 from crawler.telegram_sender import send_top_articles
 
@@ -33,24 +32,35 @@ def main():
     print("=" * 50)
 
     # Step 1: 수집
-    naver_results = naver_crawler.run()
-    google_results = google_crawler.run()
-    shopping_results = shopping_crawler.run()
-    rss_results = rss_collector.run()
+    naver_results = []
+    google_results = []
+    rss_results = []
+
+    try:
+        naver_results = naver_crawler.run()
+    except Exception as e:
+        print(f"  WARNING: 네이버 수집 오류: {e}")
+
+    try:
+        google_results = google_crawler.run()
+    except Exception as e:
+        print(f"  WARNING: 구글 수집 오류: {e}")
+
+    try:
+        rss_results = rss_collector.run()
+    except Exception as e:
+        print(f"  WARNING: RSS 수집 오류: {e}")
 
     news_articles = naver_results + google_results + rss_results
-    print(f"\n수집: {len(news_articles)}건")
+    print(f"\n수집 완료: {len(news_articles)}건")
     print(f"  국내(네이버): {len(naver_results)}건")
     print(f"  국내(구글):   {len(google_results)}건")
     print(f"  글로벌(RSS):  {len(rss_results)}건")
-    print(f"  쇼핑:         {len(shopping_results)}건")
 
     # Step 2: 필터링
     print("\n필터링 중...")
     filtered_news = filter_news(news_articles)
-    filtered_shopping = filter_shopping(shopping_results)
     print(f"  뉴스: {len(news_articles)}건 -> {len(filtered_news)}건")
-    print(f"  쇼핑: {len(shopping_results)}건 -> {len(filtered_shopping)}건")
 
     # Step 3: 중복 제거
     unique_articles, stats = remove_duplicates(filtered_news)
@@ -69,9 +79,11 @@ def main():
     print(f"\n카드뉴스 후보: {len(top_articles)}건 ({THRESHOLD_SCORE}점 이상)")
 
     # Step 6: 구글 시트 저장
-    sheets_writer.save_to_sheets(evaluated)
-    sheets_writer.save_selected_to_sheets(top_articles)
-    sheets_writer.save_shopping_to_sheets(filtered_shopping)
+    try:
+        sheets_writer.save_to_sheets(evaluated)
+        sheets_writer.save_selected_to_sheets(top_articles)
+    except Exception as e:
+        print(f"  WARNING: 시트 저장 오류: {e}")
 
     # Step 7: 텔레그램 발송
     send_top_articles(top_articles)

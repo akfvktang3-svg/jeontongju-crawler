@@ -1,6 +1,15 @@
+"""
+글로벌 주류 전문 사이트 RSS 수집기
+Phase 1: 기존 크롤러에 영향 없이 새 수집원 추가
+
+수집 대상:
+- [위스키] The Whisky Wash, Whisky Magazine, Scotch Whisky Association
+- [와인]  Decanter, Wine Business, Wine Industry Advisor
+"""
+
 import time
-import re
 from datetime import datetime, timezone
+import re
 
 try:
     import feedparser
@@ -8,7 +17,9 @@ except ImportError:
     feedparser = None
 
 
+# ─── RSS 피드 목록 ────────────────────────────────────────────
 RSS_FEEDS = [
+    # ── 위스키 ──────────────────────────────────────────────
     {
         "source": "The Whisky Wash",
         "url": "https://thewhiskywash.com/feed/",
@@ -27,6 +38,7 @@ RSS_FEEDS = [
         "category": "위스키",
         "language": "en",
     },
+    # ── 와인 ────────────────────────────────────────────────
     {
         "source": "Decanter",
         "url": "https://www.decanter.com/feed/",
@@ -47,22 +59,12 @@ RSS_FEEDS = [
     },
 ]
 
-MAX_ARTICLES_PER_FEED = 10
-
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/rss+xml, application/xml, text/xml, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Cache-Control": "no-cache",
-}
+# ─── 수집 설정 ────────────────────────────────────────────────
+MAX_ARTICLES_PER_FEED = 10   # 피드당 최대 수집 기사 수
 
 
-def _parse_date(entry):
+def _parse_date(entry) -> str:
+    """RSS 항목에서 날짜 파싱"""
     try:
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
@@ -72,7 +74,8 @@ def _parse_date(entry):
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-def _clean_text(text):
+def _clean_text(text: str) -> str:
+    """HTML 태그 제거 및 텍스트 정리"""
     if not text:
         return ""
     text = re.sub(r"<[^>]+>", "", text)
@@ -80,9 +83,13 @@ def _clean_text(text):
     return text[:500]
 
 
-def fetch_rss_feed(feed_info):
+def fetch_rss_feed(feed_info: dict) -> list:
+    """
+    단일 RSS 피드 수집
+    실패해도 빈 리스트 반환 → 다른 수집원에 영향 없음
+    """
     if feedparser is None:
-        print("  feedparser not installed: pip install feedparser")
+        print("  ⚠️ feedparser 미설치: pip install feedparser")
         return []
 
     source = feed_info["source"]
@@ -90,11 +97,13 @@ def fetch_rss_feed(feed_info):
     articles = []
 
     try:
-        feed = feedparser.parse(url, request_headers=BROWSER_HEADERS)
+        feed = feedparser.parse(url, request_headers={
+            "User-Agent": "Mozilla/5.0 (compatible; GlobalLiquorBot/1.0)"
+        })
 
+        # RSS 파싱 자체 실패 (bozo=True + 항목 없음)
         if feed.bozo and not feed.entries:
-            exc = getattr(feed, "bozo_exception", "unknown error")
-            print(f"  WARNING: [{source}] RSS parse failed: {exc}")
+            print(f"  ⚠️ [{source}] RSS 파싱 실패 (URL 변경됐을 수 있음)")
             return []
 
         for entry in feed.entries[:MAX_ARTICLES_PER_FEED]:
@@ -106,10 +115,9 @@ def fetch_rss_feed(feed_info):
                 continue
 
             article = {
+                # 기존 크롤러와 동일한 키 구조 유지
                 "title": title,
-                "url": link,
                 "link": link,
-                "summary": summary,
                 "description": summary,
                 "pub_date": _parse_date(entry),
                 "source": source,
@@ -119,19 +127,25 @@ def fetch_rss_feed(feed_info):
             }
             articles.append(article)
 
-        print(f"  OK: [{source}] {len(articles)}건 수집")
+        print(f"  ✅ [{source}] {len(articles)}건 수집")
 
     except Exception as e:
-        print(f"  ERROR: [{source}] {type(e).__name__}: {e}")
+        # 수집 실패해도 전체 파이프라인 중단 안 함
+        print(f"  ❌ [{source}] 수집 오류: {type(e).__name__}: {e}")
 
     return articles
 
 
-def run():
-    print("\n글로벌 RSS 수집 시작...")
+def run() -> list:
+    """
+    모든 RSS 피드 수집 실행
+    반환: 기존 크롤러(naver_crawler, google_crawler)와 동일한 형식의 리스트
+    """
+    print("\n🌍 글로벌 RSS 수집 시작...")
 
     if feedparser is None:
-        print("  feedparser not installed: pip install feedparser")
+        print("  ⚠️ feedparser 미설치. 설치 명령: pip install feedparser")
+        print("  📌 GitHub Actions에서는 requirements.txt에 feedparser 추가 필요")
         return []
 
     all_articles = []
@@ -139,24 +153,27 @@ def run():
     for feed_info in RSS_FEEDS:
         articles = fetch_rss_feed(feed_info)
         all_articles.extend(articles)
-        time.sleep(1)
+        time.sleep(0.5)  # 서버 부하 방지
 
+    # 카테고리별 수집 현황
     from collections import Counter
     counts = Counter(a["category"] for a in all_articles)
     for cat, cnt in counts.items():
-        print(f"  {cat}: {cnt}건")
+        print(f"  📂 {cat}: {cnt}건")
 
-    print(f"RSS 총 수집: {len(all_articles)}건")
+    print(f"📡 RSS 총 수집: {len(all_articles)}건")
     return all_articles
 
 
+# ─── 독립 테스트 실행 ─────────────────────────────────────────
 if __name__ == "__main__":
     results = run()
     if results:
-        print(f"\n수집 결과 샘플 (상위 3건):")
+        print(f"\n=== 수집 결과 샘플 (상위 3건) ===")
         for article in results[:3]:
             print(f"\n[{article['source']}] [{article['category']}]")
             print(f"제목: {article['title']}")
-            print(f"링크: {article['url']}")
+            print(f"링크: {article['link']}")
+            print(f"날짜: {article['pub_date']}")
     else:
-        print("\nWARNING: 수집된 기사 없음")
+        print("\n⚠️ 수집된 기사 없음 (네트워크 확인 필요)")
