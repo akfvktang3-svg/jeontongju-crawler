@@ -1,6 +1,6 @@
 """
 글로벌 주류 RSS 수집기
-위스키/와인/스피릿 전문 사이트에서 기사 수집
+직접 검증된 작동 사이트만 포함
 """
 
 import time
@@ -13,29 +13,21 @@ except ImportError:
     feedparser = None
 
 RSS_FEEDS = [
+    # ── 위스키 ──────────────────────────────
     {
-        "source": "The Whisky Wash",
-        "url": "https://thewhiskywash.com/feed/",
+        "source": "The Whisky Wire",
+        "url": "https://thewhiskywire.com/feed/",
         "category": "위스키",
     },
     {
-        "source": "Whisky Magazine",
-        "url": "https://www.whiskymag.com/feed/",
+        "source": "Irish Whiskey Magazine",
+        "url": "https://www.irishwhiskeymagazine.com/feed/",
         "category": "위스키",
     },
-    {
-        "source": "Scotch Whisky Association",
-        "url": "https://www.scotch-whisky.org.uk/feed/",
-        "category": "위스키",
-    },
+    # ── 와인 ───────────────────────────────
     {
         "source": "Decanter",
         "url": "https://www.decanter.com/feed/",
-        "category": "와인",
-    },
-    {
-        "source": "Wine Business",
-        "url": "https://www.winebusiness.com/rss/news.cfm",
         "category": "와인",
     },
     {
@@ -109,7 +101,7 @@ def fetch_feed(feed_info):
                 "collector": "rss_global",
             })
 
-        print(f"  OK: [{source}] {len(articles)}건")
+        print(f"  OK: [{source}] {len(articles)}건 수집")
 
     except Exception as e:
         print(f"  ERROR: [{source}] {e}")
