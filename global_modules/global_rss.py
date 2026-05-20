@@ -1,6 +1,6 @@
 """
 글로벌 주류 RSS 수집기
-직접 검증된 작동 사이트만 포함 (총 7곳)
+직접 검증된 작동 사이트만 포함 (총 8곳)
 """
 
 import time
@@ -13,7 +13,7 @@ except ImportError:
     feedparser = None
 
 RSS_FEEDS = [
-    # ── 위스키/스피릿 ────────────────────────────
+    # ── 위스키/스피릿 ─────────────────────────────
     {
         "source": "The Whisky Wire",
         "url": "https://thewhiskywire.com/feed/",
@@ -22,6 +22,11 @@ RSS_FEEDS = [
     {
         "source": "Irish Whiskey Magazine",
         "url": "https://www.irishwhiskeymagazine.com/feed/",
+        "category": "위스키",
+    },
+    {
+        "source": "The Whiskey Wash",
+        "url": "https://thewhiskeywash.com/feed/",
         "category": "위스키",
     },
     {
@@ -34,7 +39,7 @@ RSS_FEEDS = [
         "url": "https://www.whiskyintelligence.com/feed/",
         "category": "위스키",
     },
-    # ── 와인/음료 ─────────────────────────────────
+    # ── 와인/음료 ──────────────────────────────────
     {
         "source": "Decanter",
         "url": "https://www.decanter.com/feed/",
