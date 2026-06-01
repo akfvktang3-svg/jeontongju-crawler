@@ -8,7 +8,7 @@ import os
 import requests
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
-NOTION_DB_ID = "372442a958a380a0996fd8ffa1045d80"
+NOTION_DB_ID = "371de95c59a38073ac3dfafc19f49bf2"
 NOTION_API_URL = "https://api.notion.com/v1"
 
 HEADERS = {
