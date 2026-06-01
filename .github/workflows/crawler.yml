@@ -2,7 +2,7 @@ name: crawler
 
 on:
   schedule:
-        - cron: '0 9 */2 * *'
+    - cron: '0 9 */2 * *'
   workflow_dispatch:
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run pip install requests anthropic gspread google-auth python-dotenv beautifulsoup4 feedparser
+      - name: Run pip install
         run: pip install requests anthropic gspread google-auth python-dotenv beautifulsoup4 feedparser
 
       - name: set env
@@ -29,6 +29,7 @@ jobs:
           echo "SPREADSHEET_ID=${{ secrets.SPREADSHEET_ID }}" >> $GITHUB_ENV
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> $GITHUB_ENV
           echo "TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}" >> $GITHUB_ENV
+          echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> $GITHUB_ENV
 
       - name: set credentials
         run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > google_credentials.json

@@ -20,6 +20,7 @@ from global_modules.global_filter import filter_articles
 from global_modules.global_evaluator import evaluate_articles, get_top_articles, THRESHOLD_SCORE
 from global_modules.global_telegram import send_top_articles
 from global_modules.global_sheets import save_to_sheets
+import notion_writer  # 노션 저장 모듈 추가
 
 
 def main():
@@ -32,7 +33,7 @@ def main():
     try:
         articles = rss_run()
     except Exception as e:
-        print(f"  WARNING: RSS 수집 오류: {e}")
+        print(f" WARNING: RSS 수집 오류: {e}")
 
     if not articles:
         print("수집된 기사가 없어요.")
@@ -57,9 +58,16 @@ def main():
     try:
         save_to_sheets(evaluated)
     except Exception as e:
-        print(f"  WARNING: 시트 저장 오류: {e}")
+        print(f" WARNING: 시트 저장 오류: {e}")
 
-    # Step 5: 텔레그램 발송
+    # Step 5: 노션 DB 저장 (신규 추가)
+    print("\n노션 DB 저장 중...")
+    try:
+        notion_writer.save_articles(top_articles)
+    except Exception as e:
+        print(f" WARNING: 노션 저장 오류: {e}")
+
+    # Step 6: 텔레그램 발송
     send_top_articles(top_articles)
 
     # 완료 요약

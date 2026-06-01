@@ -24,6 +24,7 @@ from crawler.deduplicator import remove_duplicates, print_dedup_report
 from crawler.filter import filter_news
 from crawler.evaluator import evaluate_articles, get_top_articles, THRESHOLD_SCORE
 from crawler.telegram_sender import send_top_articles
+import notion_writer  # 노션 저장 모듈 추가
 
 
 def main():
@@ -39,23 +40,23 @@ def main():
     try:
         naver_results = naver_crawler.run()
     except Exception as e:
-        print(f"  WARNING: 네이버 수집 오류: {e}")
+        print(f" WARNING: 네이버 수집 오류: {e}")
 
     try:
         google_results = google_crawler.run()
     except Exception as e:
-        print(f"  WARNING: 구글 수집 오류: {e}")
+        print(f" WARNING: 구글 수집 오류: {e}")
 
     try:
         rss_results = rss_collector.run()
     except Exception as e:
-        print(f"  WARNING: RSS 수집 오류: {e}")
+        print(f" WARNING: RSS 수집 오류: {e}")
 
     news_articles = naver_results + google_results + rss_results
     print(f"\n수집 완료: {len(news_articles)}건")
     print(f"  국내(네이버): {len(naver_results)}건")
-    print(f"  국내(구글):   {len(google_results)}건")
-    print(f"  글로벌(RSS):  {len(rss_results)}건")
+    print(f"  국내(구글): {len(google_results)}건")
+    print(f"  글로벌(RSS): {len(rss_results)}건")
 
     # Step 2: 필터링
     print("\n필터링 중...")
@@ -83,9 +84,16 @@ def main():
         sheets_writer.save_to_sheets(evaluated)
         sheets_writer.save_selected_to_sheets(top_articles)
     except Exception as e:
-        print(f"  WARNING: 시트 저장 오류: {e}")
+        print(f" WARNING: 시트 저장 오류: {e}")
 
-    # Step 7: 텔레그램 발송
+    # Step 7: 노션 DB 저장 (신규 추가)
+    print("\n노션 DB 저장 중...")
+    try:
+        notion_writer.save_articles(top_articles)
+    except Exception as e:
+        print(f" WARNING: 노션 저장 오류: {e}")
+
+    # Step 8: 텔레그램 발송
     send_top_articles(top_articles)
 
     # 완료 요약
