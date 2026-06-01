@@ -1,15 +1,19 @@
 """
 노션 카드뉴스 데이터베이스에 크롤링 결과를 저장하는 모듈
-- 기사 제목 / 카테고리 / 한줄요약 / URL / 진행여부(작업전) 저장
+- 기사 제목 / 카테고리 / 한줄요약 / URL / 진행여부(작업전) / 수집일 저장
 - 중복 URL 체크 (같은 기사 중복 저장 방지)
+- 14일 이상 된 데이터 아카이브 처리
 """
 
 import os
 import requests
+from datetime import datetime, timezone, timedelta
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
-NOTION_DB_ID = "371de95c59a38073ac3dfafc19f49bf2"
+NOTION_DB_ID = "372442a958a380a0996fd8ffa1045d80"
 NOTION_API_URL = "https://api.notion.com/v1"
+
+KST = timezone(timedelta(hours=9))
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -29,7 +33,7 @@ CATEGORY_MAP = {
     "와인": "와인",
     "스피릿": "스피릿",
     "음료업계": "음료업계",
-    "global": "스피릿",  # 글로벌 크롤러 기본값
+    "global": "스피릿",
 }
 
 VALID_CATEGORIES = ["전통주", "위스키", "와인", "스피릿", "음료업계"]
@@ -42,7 +46,6 @@ def _map_category(raw_category: str) -> str:
     mapped = CATEGORY_MAP.get(raw_category.strip(), None)
     if mapped:
         return mapped
-    # 직접 매칭 시도
     for valid in VALID_CATEGORIES:
         if valid in raw_category:
             return valid
@@ -80,6 +83,7 @@ def save_article(article: dict) -> bool:
     summary = article.get("one_line", article.get("summary", article.get("card_summary", ""))).strip()
     raw_category = article.get("category", "")
     category = _map_category(raw_category)
+    today = datetime.now(KST).strftime("%Y-%m-%d")
 
     if not title:
         return False
@@ -107,6 +111,9 @@ def save_article(article: dict) -> bool:
             },
             "진행여부": {
                 "select": {"name": "작업전"}
+            },
+            "수집일": {
+                "date": {"start": today}
             },
         }
     }
@@ -146,3 +153,49 @@ def save_articles(articles: list) -> dict:
 
     print(f"\n노션 저장 완료: 저장 {saved}건 / 중복 skip {skipped}건 / 실패 {failed}건")
     return {"saved": saved, "skipped": skipped, "failed": failed}
+
+
+def cleanup_old_articles():
+    """
+    14일 이상 된 기사 아카이브 처리
+    - 아카이브된 항목은 DB에서 안 보이지만 복구 가능
+    """
+    print("\n오래된 기사 정리 중...")
+    cutoff = datetime.now(KST) - timedelta(days=14)
+    cutoff_str = cutoff.strftime("%Y-%m-%d")
+
+    # 14일 이상 된 항목 조회
+    body = {
+        "filter": {
+            "property": "수집일",
+            "date": {"before": cutoff_str}
+        }
+    }
+
+    res = requests.post(
+        f"{NOTION_API_URL}/databases/{NOTION_DB_ID}/query",
+        headers=HEADERS,
+        json=body,
+    )
+
+    if res.status_code != 200:
+        print(f"  [오류] 오래된 기사 조회 실패: {res.status_code}")
+        return
+
+    old_pages = res.json().get("results", [])
+    if not old_pages:
+        print("  정리할 기사 없음")
+        return
+
+    archived = 0
+    for page in old_pages:
+        page_id = page["id"]
+        r = requests.patch(
+            f"{NOTION_API_URL}/pages/{page_id}",
+            headers=HEADERS,
+            json={"archived": True}
+        )
+        if r.status_code == 200:
+            archived += 1
+
+    print(f"  아카이브 완료: {archived}건 (14일 이상 된 기사)")

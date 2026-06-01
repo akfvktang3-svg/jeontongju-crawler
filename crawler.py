@@ -89,6 +89,7 @@ def main():
     # Step 7: 노션 DB 저장 (신규 추가)
     print("\n노션 DB 저장 중...")
     try:
+        notion_writer.cleanup_old_articles()
         notion_writer.save_articles(top_articles)
     except Exception as e:
         print(f" WARNING: 노션 저장 오류: {e}")
